@@ -18,7 +18,7 @@ from functools import reduce
 
 import numpy as np
 from numpy.linalg import svd
-from scipy.sparse.linalg import eigs
+from scipy.sparse.linalg import eigs as sps_eigs
 
 
 class MatrixState(object):
@@ -28,12 +28,17 @@ class MatrixState(object):
     A sentinel matrix state could be initialized for an imaginary state
     which provides convenience for doubly linked list implementation.
     """
-    def __init__(self, bond_order1, bond_order2, mpo):
+    def __init__(self, bond_order1, bond_order2, mpo, error_thresh=0):
         """
-        Initialize a matrix state with shape (bond_order1, phys_d, bond_order2) and an MPO attached to the state.
-        The MPO is usually the Hamiltonian.
+        Initialize a matrix state with shape (bond_order1, phys_d, bond_order2) and an MPO attached to the state,
+        where phys_d is determined by the MPO and MPO is usually the Hamiltonian.
         If a sentinel `MatrixState` is required, set bond_order1, phys_d or bond_order2 to 0 or None.
         MPO should be a 4-degree tensor with 2 bond degrees at first and 2 physical degrees at last.
+        :parameter bond_order1: shape[0] of the matrix
+        :parameter bond_order2: shape[2] of the matrix
+        :parameter mpo: matrix product operator (hamiltonian) attached to the matrix
+        :parameter error_thresh: error threshold used in svd compressing of the matrix state.
+        The lower the threshold, the higher the accuracy.
         """
         # if is a sentinel matrix state
         if not (bond_order1 and bond_order2):
@@ -57,6 +62,7 @@ class MatrixState(object):
         # modifying self._matrix directly may lead to unexpected results.
         self.F_cache = None
         self.L_cache = self.R_cache = None
+        self.error_thresh = error_thresh
 
     @property
     def matrix(self):
@@ -95,13 +101,31 @@ class MatrixState(object):
         """
         return self.matrix.shape[2]
 
+    def svd_compress(self, direction):
+        """
+        Perform svd compression on the self.matrix. Used in the canonical process.
+        :param direction: To which the matrix is compressed
+        :return: The u,s,v value of the svd decomposition. Truncated if self.thresh is provided.
+        """
+        left_argument_set = ['l', 'left']
+        right_argument_set = ['r', 'right']
+        assert direction in (left_argument_set + right_argument_set)
+        if direction in left_argument_set:
+            u, s, v = svd(self.matrix.reshape(self.bond_order1 * self.phys_d, self.bond_order2), full_matrices=False)
+        else:
+            u, s, v = svd(self.matrix.reshape(self.bond_order1, self.phys_d * self.bond_order2), full_matrices=False)
+        if self.error_thresh is None or self.error_thresh == 0:
+            return u, s, v
+        new_bond_order = max(((s.cumsum() / s.sum()) < 1 - self.error_thresh).sum() + 1, 1)
+        return u[:, :new_bond_order], s[:new_bond_order], v[:new_bond_order, :]
+
     def left_canonicalize(self):
         """
         Perform left canonical decomposition on this site
         """
         if not self.right_ts:
             return
-        u, s, v = svd(self.matrix.reshape(self.bond_order1 * self.phys_d, self.bond_order2), full_matrices=False)
+        u, s, v = self.svd_compress('left')
         self.matrix = u.reshape((self.bond_order1, self.phys_d, -1))
         self.right_ts.matrix = np.tensordot(np.dot(np.diag(s), v), self.right_ts.matrix, axes=[1, 0])
 
@@ -120,7 +144,7 @@ class MatrixState(object):
         """
         if not self.left_ts:
             return
-        u, s, v = svd(self.matrix.reshape(self.bond_order1, self.phys_d * self.bond_order2), full_matrices=False)
+        u, s, v = self.svd_compress('right')
         self.matrix = v.reshape((-1, self.phys_d, self.bond_order2))
         self.left_ts.matrix = np.tensordot(self.left_ts.matrix, np.dot(u, np.diag(s)), axes=[2, 0])
 
@@ -305,16 +329,22 @@ class MatrixState(object):
         # reshape variational tensor to a square matrix
         variational_tensor = self.calc_variational_tensor().reshape(dim, dim)
         # find the smallest eigenvalue and eigenvector. Note the value returned by `eigs` are complex numbers
-        eig_val, eig_vec = eigs(variational_tensor, 1, which='SR')
+        if 2 < dim:
+            complex_eig_val, complex_eig_vec = sps_eigs(variational_tensor, 1, which='SR')
+            eig_val = complex_eig_val.real
+            eig_vec = complex_eig_vec.real
+        else:
+            all_eig_val, all_eig_vec = np.linalg.eigh(variational_tensor)
+            eig_val = all_eig_val[0]
+            eig_vec = all_eig_vec[:, 0]
         # reshape the eigenvector back to a matrix state
-        self.matrix = eig_vec.real.reshape(self.bond_order1, self.phys_d, self.bond_order2)
+        self.matrix = eig_vec.reshape(self.bond_order1, self.phys_d, self.bond_order2)
         # perform normalization
         if direction == 'right':
             self.left_canonicalize()
         if direction == 'left':
             self.right_canonicalize()
-        print('Ground state energy: %.10f' % eig_val.real)
-        return eig_val.real
+        return float(eig_val)
 
     def insert_ts_before(self, ts):
         """
@@ -345,24 +375,37 @@ class MatrixProductState(object):
     """
     A doubly linked list of `MatrixState`. The matrix product state of the whole wave function.
     """
-    def __init__(self, bond_order, W_list):
+
+    # initial bond order when using `error_threshold` as criterion for compression
+    initial_bond_order = 50
+
+    def __init__(self, mpo_list, max_bond_order=None, error_threshold=None):
         """
         Initialize a MatrixProductState with given bond order.
-        :param bond_order: the bond order required. The higher bond order, the higher accuracy and compuational cost
-        :param W_list: the list for MPOs. The site num depends on the length of the list
+        :param max_bond_order: the bond order required. The higher bond order, the higher accuracy and compuational cost
+        :param mpo_list: the list for MPOs. The site num depends on the length of the list
         """
-        self.bond_order = bond_order
-        self.site_num = len(W_list)
-        self.W_list = W_list
+        if max_bond_order is None and error_threshold is None:
+            raise ValueError('Must provide either `max_bond_order` or `error_threshold`. None is provided.')
+        if max_bond_order is not None and error_threshold is not None:
+            raise ValueError('Must provide either `max_bond_order` or `error_threshold`. Both are provided.')
+        self.max_bond_order = max_bond_order
+        if max_bond_order is not None:
+            bond_order = max_bond_order
+        else:
+            bond_order = self.initial_bond_order
+        self.error_threshold = error_threshold
+        self.site_num = len(mpo_list)
+        self.mpo_list = mpo_list
         # establish the sentinels for the doubly linked list
-        self.tensor_state_head = MatrixState(0, 0, 0)
-        self.tensor_state_tail = MatrixState(0, 0, 0)
+        self.tensor_state_head = MatrixState(0, 0, None)
+        self.tensor_state_tail = MatrixState(0, 0, None)
         self.tensor_state_head.right_ts = self.tensor_state_tail
         self.tensor_state_tail.left_ts = self.tensor_state_head
         # initialize the matrix states with random numbers.
-        M_list = [MatrixState(1, bond_order, W_list[0])] + \
-                 [MatrixState(bond_order, bond_order, W_list[i + 1]) for i in range(self.site_num - 2)] + \
-                 [MatrixState(bond_order, 1, W_list[-1])]
+        M_list = [MatrixState(1, bond_order, mpo_list[0], error_threshold)] + \
+                 [MatrixState(bond_order, bond_order, mpo_list[i + 1], error_threshold) for i in range(self.site_num - 2)] + \
+                 [MatrixState(bond_order, 1, mpo_list[-1], error_threshold)]
         # insert matrix states to the doubly linked list
         for ts in M_list:
             self.tensor_state_tail.insert_ts_before(ts)
@@ -372,7 +415,7 @@ class MatrixProductState(object):
         #for ts in self.iter_ts_left2right():
         #    ts.test_left_unitary()
 
-    def iter_ts_left2right(self):
+    def iter_ms_left2right(self):
         """
         matrix state iterator. From left to right
         """
@@ -382,7 +425,7 @@ class MatrixProductState(object):
             ts = ts.right_ts
         raise StopIteration
 
-    def iter_ts_right2left(self):
+    def iter_ms_right2left(self):
         """
         matrix state iterator. From right to left
         """
@@ -392,27 +435,38 @@ class MatrixProductState(object):
             ts = ts.left_ts
         raise StopIteration
 
-    def optimize(self):
+    def search_ground_state(self):
         """
-        optimize the energy of the MPS by variation method
+        Find the ground state (optimize the energy) of the MPS by variation method
         :return the energies of each step during the optimization
         """
         energies = []
         # stop when the energies does not change anymore
         while len(energies) < 2 or not np.isclose(energies[-1], energies[-2]):
-            for ts in self.iter_ts_right2left():
+            for ts in self.iter_ms_right2left():
                 energies.append(ts.variational_update('left'))
-            for ts in self.iter_ts_left2right():
+            for ts in self.iter_ms_left2right():
                 energies.append(ts.variational_update('right'))
         return energies
 
-    def expectation(self, W_list):
-        F_list = [ts.calc_F(mpo) for mpo, ts in zip(W_list, self.iter_ts_left2right())]
+    def expectation(self, mpo_list):
+        """
+        Calculate the expectation value of the matrix product state for a certain operator defined in `mpo_list`
+        :param mpo_list: a list of mpo from left to right. Construct the MPO by `build_mpo_list` is recommended.
+        :return: the expectation value
+        """
+        F_list = [ts.calc_F(mpo) for mpo, ts in zip(mpo_list, self.iter_ms_left2right())]
 
         def contractor(tensor1, tensor2):
             return np.tensordot(tensor1, tensor2, axes=[[1, 3, 5], [0, 2, 4]]).transpose((0, 3, 1, 4, 2, 5))
         expectation = reduce(contractor, F_list).reshape(1)
         return expectation[0]
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        return 'MatrixProductState: %s' % ('-'.join([str(ms.bond_order2) for ms in self.iter_ms_left2right()][:-1]))
 
 
 def build_mpo_list(single_mpo, site_num):
