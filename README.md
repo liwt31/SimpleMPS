@@ -5,6 +5,7 @@ Matrix product state (MPS) based density matrix renormalization group (DMRG): a 
 # What is SimpleMPS
 Density matrix renormalization group (DMRG) is a powerful method to simulate one-dimensional strongly correlated quantum systems. During recent years, combining DMRG with matrix product state (MPS) has allowed further understanding of the DMRG method. `SimpleMPS` aims to provide a demo for MPS based DMRG to solve the [Heisenberg model](https://en.wikipedia.org/wiki/Heisenberg_model_(quantum)). The ground state of the Heisenberg model could be obtained iteratively (see the image below, $h=1$, $J=J_z=1$, 20 sites). 
 ![Heisenberg energy profile](Img/heisenberg.png)
+
 The phase transition of [transverse field Ising (TFI) model](https://en.wikipedia.org/wiki/Ising_model#One-dimensional_solution_with_transverse_field) is also provided as a further example (see the image below, 20 sites).
 ![Ising phase transition](Img/ising1.png)
 ![Ising phase diagram](Img/ising2.png)
