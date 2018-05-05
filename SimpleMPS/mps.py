@@ -43,7 +43,7 @@ class MatrixState(object):
         # if is a sentinel matrix state
         if not (bond_order1 and bond_order2):
             self._matrix = self.mpo = np.ones((0, 0, 0))
-            self.left_ts = self.right_ts = None
+            self.left_ms = self.right_ms = None
             self.F_cache = self.L_cache = self.R_cache = np.ones((1,) * 6)
             self.is_sentinel = True
             return
@@ -53,9 +53,9 @@ class MatrixState(object):
         self._matrix = np.random.random((bond_order1, phys_d, bond_order2))
         self.mpo = mpo
         # the pointer to the matrix state on the left
-        self.left_ts = None
+        self.left_ms = None
         # the pointer to the matrix state on the right
-        self.right_ts = None
+        self.right_ms = None
         # cache for F, L and R to accelerate calculations
         # for the definition of these parameters, see the [reference]: Annals of Physics, 326 (2011), 145-146
         # because of the cache, any modifications to self._matrix should be properly wrapped.
@@ -63,6 +63,10 @@ class MatrixState(object):
         self.F_cache = None
         self.L_cache = self.R_cache = None
         self.error_thresh = error_thresh
+
+    @classmethod
+    def create_sentinel(cls):
+        return cls(0, 0, None)
 
     @property
     def matrix(self):
@@ -114,7 +118,7 @@ class MatrixState(object):
             u, s, v = svd(self.matrix.reshape(self.bond_order1 * self.phys_d, self.bond_order2), full_matrices=False)
         else:
             u, s, v = svd(self.matrix.reshape(self.bond_order1, self.phys_d * self.bond_order2), full_matrices=False)
-        if self.error_thresh is None or self.error_thresh == 0:
+        if self.error_thresh == 0:
             return u, s, v
         new_bond_order = max(((s.cumsum() / s.sum()) < 1 - self.error_thresh).sum() + 1, 1)
         return u[:, :new_bond_order], s[:new_bond_order], v[:new_bond_order, :]
@@ -123,39 +127,39 @@ class MatrixState(object):
         """
         Perform left canonical decomposition on this site
         """
-        if not self.right_ts:
+        if not self.right_ms:
             return
         u, s, v = self.svd_compress('left')
         self.matrix = u.reshape((self.bond_order1, self.phys_d, -1))
-        self.right_ts.matrix = np.tensordot(np.dot(np.diag(s), v), self.right_ts.matrix, axes=[1, 0])
+        self.right_ms.matrix = np.tensordot(np.dot(np.diag(s), v), self.right_ms.matrix, axes=[1, 0])
 
     def left_canonicalize_all(self):
         """
         Perform left canonical decomposition on this site and all sites on the right
         """
-        if not self.right_ts:
+        if not self.right_ms:
             return
         self.left_canonicalize()
-        self.right_ts.left_canonicalize_all()
+        self.right_ms.left_canonicalize_all()
 
     def right_canonicalize(self):
         """
         Perform right canonical decomposition on this site
         """
-        if not self.left_ts:
+        if not self.left_ms:
             return
         u, s, v = self.svd_compress('right')
         self.matrix = v.reshape((-1, self.phys_d, self.bond_order2))
-        self.left_ts.matrix = np.tensordot(self.left_ts.matrix, np.dot(u, np.diag(s)), axes=[2, 0])
+        self.left_ms.matrix = np.tensordot(self.left_ms.matrix, np.dot(u, np.diag(s)), axes=[2, 0])
 
     def right_canonicalize_all(self):
         """
         Perform right canonical decomposition on this site and all sites on the left
         """
-        if not self.left_ts:
+        if not self.left_ms:
             return
         self.right_canonicalize()
-        self.left_ts.right_canonicalize_all()
+        self.left_ms.right_canonicalize_all()
 
     def test_left_unitary(self):
         """
@@ -212,13 +216,13 @@ class MatrixState(object):
         calculate L in a recursive way
         """
         # the left state is a sentinel, return F directly.
-        if not self.left_ts:
+        if not self.left_ms:
             return self.calc_F()
         # return cache immediately if available
         if self.L_cache is not None:
             return self.L_cache
         # find L from the state on the left
-        last_L = self.left_ts.calc_L()
+        last_L = self.left_ms.calc_L()
         # calculate F in this state
         F = self.calc_F()
         """
@@ -240,11 +244,11 @@ class MatrixState(object):
         calculate R in a recursive way
         """
         # mirror to self.calc_L. Explanation omitted.
-        if not self.right_ts:
+        if not self.right_ms:
             return self.calc_F()
         if self.R_cache is not None:
             return self.R_cache
-        last_R = self.right_ts.calc_R()
+        last_R = self.right_ms.calc_R()
         F = self.calc_F()
         R = np.tensordot(F, last_R, axes=[[1, 3, 5], [0, 2, 4]]).transpose((0, 3, 1, 4, 2, 5))
         self.R_cache = R
@@ -256,9 +260,9 @@ class MatrixState(object):
         """
         self.F_cache = None
         # clear R cache for all matrix state on the left because their R involves self.matrix
-        self.left_ts.clear_R_cache()
+        self.left_ms.clear_R_cache()
         # clear L cache for all matrix state on the right because their L involves self.matrix
-        self.right_ts.clear_L_cache()
+        self.right_ms.clear_L_cache()
 
     def clear_L_cache(self):
         """
@@ -268,7 +272,7 @@ class MatrixState(object):
         if self.L_cache is None or not self:
             return
         self.L_cache = None
-        self.right_ts.clear_L_cache()
+        self.right_ms.clear_L_cache()
 
     def clear_R_cache(self):
         """
@@ -278,7 +282,7 @@ class MatrixState(object):
         if self.R_cache is None or not self:
             return
         self.R_cache = None
-        self.left_ts.clear_R_cache()
+        self.left_ms.clear_R_cache()
 
     def calc_variational_tensor(self):
         """
@@ -301,7 +305,7 @@ class MatrixState(object):
           4 --*-- 5                                    3 --*-- 4                
               L                MPO                       left_middle
         """
-        left_middle = np.tensordot(self.left_ts.calc_L(), self.mpo, axes=[3, 0])
+        left_middle = np.tensordot(self.left_ms.calc_L(), self.mpo, axes=[3, 0])
         """
         do the contraction for L and MPO
         graphical representation (* for MPS and # for MPO, numbers represents the index of the degree in tensor.shape):
@@ -313,7 +317,7 @@ class MatrixState(object):
             left_middle             R                       raw variational tensor
         Note the order of 0, 2, 3, 9, 10, 12 are all 1, so the dimension could be reduced
         """
-        raw_variational_tensor = np.tensordot(left_middle, self.right_ts.calc_R(), axes=[5, 2])
+        raw_variational_tensor = np.tensordot(left_middle, self.right_ms.calc_R(), axes=[5, 2])
         shape = (self.bond_order1, self.bond_order1, self.phys_d, self.phys_d, self.bond_order2, self.bond_order2)
         # reduce the dimension and rearrange the degrees to 1, 8, 6, 4, 11, 7 in the above graphical representation
         return raw_variational_tensor.reshape(shape).transpose((0, 2, 4, 1, 3, 5))
@@ -350,10 +354,10 @@ class MatrixState(object):
         """
         insert a matrix state before this matrix state. Standard doubly linked list operation.
         """
-        left_ts = self.left_ts
-        left_ts.right_ts = ts
-        ts.left_ts, ts.right_ts = left_ts, self
-        self.left_ts = ts
+        left_ms = self.left_ms
+        left_ms.right_ms = ts
+        ts.left_ms, ts.right_ms = left_ms, self
+        self.left_ms = ts
 
     def __str__(self):
         return self.__repr__()
@@ -379,15 +383,17 @@ class MatrixProductState(object):
     # initial bond order when using `error_threshold` as criterion for compression
     initial_bond_order = 50
 
-    def __init__(self, mpo_list, max_bond_order=None, error_threshold=None):
+    def __init__(self, mpo_list, max_bond_order=None, error_threshold=0):
         """
         Initialize a MatrixProductState with given bond order.
-        :param max_bond_order: the bond order required. The higher bond order, the higher accuracy and compuational cost
         :param mpo_list: the list for MPOs. The site num depends on the length of the list
+        :param max_bond_order: the bond order required. The higher bond order, the higher accuracy and compuational cost
+        :param error_threshold: error threshold used in svd compressing of the matrix state.
+        The lower the threshold, the higher the accuracy.
         """
-        if max_bond_order is None and error_threshold is None:
+        if max_bond_order is None and error_threshold == 0:
             raise ValueError('Must provide either `max_bond_order` or `error_threshold`. None is provided.')
-        if max_bond_order is not None and error_threshold is not None:
+        if max_bond_order is not None and error_threshold != 0:
             raise ValueError('Must provide either `max_bond_order` or `error_threshold`. Both are provided.')
         self.max_bond_order = max_bond_order
         if max_bond_order is not None:
@@ -398,10 +404,10 @@ class MatrixProductState(object):
         self.site_num = len(mpo_list)
         self.mpo_list = mpo_list
         # establish the sentinels for the doubly linked list
-        self.tensor_state_head = MatrixState(0, 0, None)
-        self.tensor_state_tail = MatrixState(0, 0, None)
-        self.tensor_state_head.right_ts = self.tensor_state_tail
-        self.tensor_state_tail.left_ts = self.tensor_state_head
+        self.tensor_state_head = MatrixState.create_sentinel()
+        self.tensor_state_tail = MatrixState.create_sentinel()
+        self.tensor_state_head.right_ms = self.tensor_state_tail
+        self.tensor_state_tail.left_ms = self.tensor_state_head
         # initialize the matrix states with random numbers.
         M_list = [MatrixState(1, bond_order, mpo_list[0], error_threshold)] + \
                  [MatrixState(bond_order, bond_order, mpo_list[i + 1], error_threshold) for i in range(self.site_num - 2)] + \
@@ -410,7 +416,7 @@ class MatrixProductState(object):
         for ts in M_list:
             self.tensor_state_tail.insert_ts_before(ts)
         # perform the initial normalization
-        self.tensor_state_head.right_ts.left_canonicalize_all()
+        self.tensor_state_head.right_ms.left_canonicalize_all()
         # test for the unitarity
         #for ts in self.iter_ts_left2right():
         #    ts.test_left_unitary()
@@ -419,20 +425,20 @@ class MatrixProductState(object):
         """
         matrix state iterator. From left to right
         """
-        ts = self.tensor_state_head.right_ts
-        while ts:
-            yield ts
-            ts = ts.right_ts
+        ms = self.tensor_state_head.right_ms
+        while ms:
+            yield ms
+            ms = ms.right_ms
         raise StopIteration
 
     def iter_ms_right2left(self):
         """
         matrix state iterator. From right to left
         """
-        ts = self.tensor_state_tail.left_ts
-        while ts:
-            yield ts
-            ts = ts.left_ts
+        ms = self.tensor_state_tail.left_ms
+        while ms:
+            yield ms
+            ms = ms.left_ms
         raise StopIteration
 
     def search_ground_state(self):
@@ -455,12 +461,12 @@ class MatrixProductState(object):
         :param mpo_list: a list of mpo from left to right. Construct the MPO by `build_mpo_list` is recommended.
         :return: the expectation value
         """
-        F_list = [ts.calc_F(mpo) for mpo, ts in zip(mpo_list, self.iter_ms_left2right())]
+        F_list = [ms.calc_F(mpo) for mpo, ms in zip(mpo_list, self.iter_ms_left2right())]
 
         def contractor(tensor1, tensor2):
             return np.tensordot(tensor1, tensor2, axes=[[1, 3, 5], [0, 2, 4]]).transpose((0, 3, 1, 4, 2, 5))
-        expectation = reduce(contractor, F_list).reshape(1)
-        return expectation[0]
+        expectation = reduce(contractor, F_list).reshape(1)[0]
+        return expectation
 
     def __repr__(self):
         return self.__str__()
@@ -469,12 +475,13 @@ class MatrixProductState(object):
         return 'MatrixProductState: %s' % ('-'.join([str(ms.bond_order2) for ms in self.iter_ms_left2right()][:-1]))
 
 
-def build_mpo_list(single_mpo, site_num):
+def build_mpo_list(single_mpo, site_num, regularize=False):
     """
     build MPO list for MPS.
     :param single_mpo: a numpy ndarray with ndim=4.
     The first 2 dimensions reprsents the square shape of the MPO and the last 2 dimensions are physical dimensions.
     :param site_num: the total number of sites
+    :param regularize: whether regularize the mpo so that it represents the average over all sites.
     :return MPO list
     """
     argument_error = ValueError("The definition of MPO is incorrect. Datatype: %s, shape: %s." 
@@ -489,9 +496,11 @@ def build_mpo_list(single_mpo, site_num):
     if single_mpo.shape[0] != single_mpo.shape[1]:
         raise argument_error
     # the first MPO, only contains the last row
-    mpo_1 = single_mpo[-1]
+    mpo_1 = single_mpo[-1].copy()
     mpo_1 = mpo_1.reshape((1, ) + mpo_1.shape)
     # the last MPO, only contains the first column
-    mpo_L = single_mpo[:, 0]
+    mpo_L = single_mpo[:, 0].copy()
+    if regularize:
+        mpo_L /= site_num
     mpo_L = mpo_L.reshape((mpo_L.shape[0], ) + (1, ) + mpo_L.shape[1:])
-    return [mpo_1] + [single_mpo] * (site_num - 2) + [mpo_L]
+    return [mpo_1] + [single_mpo.copy() for i in range(site_num - 2)] + [mpo_L]
