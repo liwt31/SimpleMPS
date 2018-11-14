@@ -14,7 +14,8 @@ from __future__ import division
 from __future__ import print_function
 
 import logging
-logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
+
+logging.basicConfig(format="%(asctime)s %(message)s", level=logging.INFO)
 
 from mps import MatrixProductState, build_mpo_list
 
@@ -22,7 +23,7 @@ from mps import MatrixProductState, build_mpo_list
 from paulimat import *
 
 
-def construct_single_mpo(j=1., h=1.):
+def construct_single_mpo(j=1.0, h=1.0):
     """
     Construct single site mpo based on transverse field Ising model
     :param j: coupling constant
@@ -30,8 +31,8 @@ def construct_single_mpo(j=1., h=1.):
     :return: constructed single site mpo with shape (3, 3, 2, 2)
     """
     # MPO line by line
-    mpo_block1 = [S1,      S0,      S0]
-    mpo_block2 = [Sz,      S0,      S0]
+    mpo_block1 = [S1, S0, S0]
+    mpo_block2 = [Sz, S0, S0]
     mpo_block3 = [-h * Sx, -j * Sz, S1]
 
     # MPO shape: 3, 3, 2, 2
@@ -47,7 +48,9 @@ def construct_mz_mpo_list(site_num):
     :param site_num: number of sites
     :return: $M_z$ mpo list
     """
-    mpo_list = build_mpo_list(np.float64([[S1, S0], [Sz, S1]]), site_num, regularize=True)
+    mpo_list = build_mpo_list(
+        np.float64([[S1, S0], [Sz, S1]]), site_num, regularize=True
+    )
     return mpo_list
 
 
@@ -57,7 +60,9 @@ def construct_mx_mpo_list(site_num):
     :param site_num: number of sites
     :return: $M_x$ mpo list
     """
-    mpo_list = build_mpo_list(np.float64([[S1, S0], [Sx, S1]]), site_num, regularize=True)
+    mpo_list = build_mpo_list(
+        np.float64([[S1, S0], [Sx, S1]]), site_num, regularize=True
+    )
     return mpo_list
 
 
@@ -87,8 +92,8 @@ def calc_phase_diagram():
     mx_result = np.zeros((len(j_grid), len(h_grid)))
     for j_idx, j in enumerate(j_grid):
         for h_idx, h in enumerate(h_grid):
-            param_str = 'j = %g, h = %g' % (j, h)
-            logging.info('Start: ' + param_str)
+            param_str = "j = %g, h = %g" % (j, h)
+            logging.info("Start: " + param_str)
             mpo_list = build_mpo_list(construct_single_mpo(j, h), SITE_NUM)
             mps = MatrixProductState(mpo_list, error_threshold=ERROR_THRESHOLD)
             energies = mps.search_ground_state()
@@ -96,8 +101,17 @@ def calc_phase_diagram():
             mx = mps.expectation(construct_mx_mpo_list(SITE_NUM))
             mz_result[j_idx][h_idx] = mz
             mx_result[j_idx][h_idx] = mx
-            logging.info('End %s. Energy: %g, M_z: %g, M_x: %g' % (param_str, energies[-1], mz, mx))
-    np.savez('ising_phase_diagram', mz_result=mz_result, mx_result=mx_result, j_grid=j_grid, h_grid=h_grid)
+            logging.info(
+                "End %s. Energy: %g, M_z: %g, M_x: %g"
+                % (param_str, energies[-1], mz, mx)
+            )
+    np.savez(
+        "ising_phase_diagram",
+        mz_result=mz_result,
+        mx_result=mx_result,
+        j_grid=j_grid,
+        h_grid=h_grid,
+    )
 
 
 def calc_mx_vs_h():
@@ -111,7 +125,7 @@ def calc_mx_vs_h():
     energy_list = []
     mx_list = []
     for h in h_list:
-        logging.info('Start: h = %g' % h)
+        logging.info("Start: h = %g" % h)
         mpo_list = build_mpo_list(construct_single_mpo(j=1, h=h), SITE_NUM)
         mps = MatrixProductState(mpo_list, error_threshold=ERROR_THRESHOLD)
         energies = mps.search_ground_state()
@@ -119,11 +133,10 @@ def calc_mx_vs_h():
         average_energy = energies[-1] / SITE_NUM
         energy_list.append(average_energy)
         mx_list.append(mx)
-        logging.info('End h = %g. Energy: %g, M_x: %g' % (h, average_energy, mx))
-    np.savez('ising_mx_vs_h', h_list=h_list, energy_list=energy_list, mx_list=mx_list)
+        logging.info("End h = %g. Energy: %g, M_x: %g" % (h, average_energy, mx))
+    np.savez("ising_mx_vs_h", h_list=h_list, energy_list=energy_list, mx_list=mx_list)
 
 
-if __name__ == '__main__':
-    #calc_mx_vs_h()
+if __name__ == "__main__":
+    # calc_mx_vs_h()
     calc_phase_diagram()
-

@@ -17,12 +17,10 @@ Sp = np.float64([[0, 1], [0, 0]])
 # S^-
 Sm = np.float64([[0, 0], [1, 0]])
 
-Sx = np.float64([[0, .5], [.5, 0]])
-Sz = np.float64([[.5, 0], [0, -.5]])
+Sx = np.float64([[0, 0.5], [0.5, 0]])
+Sz = np.float64([[0.5, 0], [0, -0.5]])
 
 # zero matrix block
 S0 = np.zeros((2, 2))
 # identity matrix block
 S1 = np.eye((2))
-
-

@@ -14,6 +14,7 @@ from __future__ import division
 from __future__ import print_function
 
 from mps import MatrixProductState, build_mpo_list
+
 # import pauli matrices
 from paulimat import *
 
@@ -27,11 +28,11 @@ def construct_single_mpo(J=1, Jz=1, h=1):
     :return: constructed single site mpo with shape (5, 5, 2, 2)
     """
     # MPO line by line
-    mpo_block1 = [S1,    S0,     S0,     S0,    S0]
-    mpo_block2 = [Sp,    S0,     S0,     S0,    S0]
-    mpo_block3 = [Sm,    S0,     S0,     S0,    S0]
-    mpo_block4 = [Sz,    S0,     S0,     S0,    S0]
-    mpo_block5 = [-h*Sz, J/2*Sm, J/2*Sp, Jz*Sz, S1]
+    mpo_block1 = [S1, S0, S0, S0, S0]
+    mpo_block2 = [Sp, S0, S0, S0, S0]
+    mpo_block3 = [Sm, S0, S0, S0, S0]
+    mpo_block4 = [Sz, S0, S0, S0, S0]
+    mpo_block5 = [-h * Sz, J / 2 * Sm, J / 2 * Sp, Jz * Sz, S1]
 
     # MPO shape: 5, 5, 2, 2
     mpo = np.float64([mpo_block1, mpo_block2, mpo_block3, mpo_block4, mpo_block5])
@@ -39,6 +40,7 @@ def construct_single_mpo(J=1, Jz=1, h=1):
     mpo.flags.writeable = False
 
     return mpo
+
 
 # number of sites
 SITE_NUM = 20
@@ -51,11 +53,9 @@ MAX_BOND_ORDER = 16
 # the threshold for error when compressing MPS
 ERROR_THRESHOLD = 1e-7
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     mpo_list = build_mpo_list(construct_single_mpo(), SITE_NUM)
     mps = MatrixProductState(mpo_list, max_bond_order=MAX_BOND_ORDER)
     # use threshold as criterion for compression
     # mps = MatrixProductState(mpo_list, error_threshold=ERROR_THRESHOLD)
     print(mps.search_ground_state())
-
-
