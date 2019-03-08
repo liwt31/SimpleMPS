@@ -1,5 +1,5 @@
 # SimpleMPS
-Matrix product state (MPS) based density matrix renormalization group (DMRG): a Python implementation.
+This is a simplest demo of Matrix product state (MPS) based density matrix renormalization group (DMRG) with detailed comments, particularly suitable for new-learners to quickly get the idea of how MPS works at code level. For sophisticated and production-ready MPS packages, I recommend [pytenet](https://github.com/cmendl/pytenet) and [quimb](https://github.com/jcmgray/quimb).
 
 ---
 # What is SimpleMPS
@@ -11,6 +11,7 @@ The phase transition of [transverse field Ising (TFI) model](https://en.wikipedi
 ![Ising phase diagram](Img/ising2.png)
 
 The implementation is largely inspired by [The density-matrix renormalization group in the age of matrix product states](https://arxiv.org/abs/1008.3477v2). Understanding the first 6 parts of the article is crucial to understanding the code. 
+
 # Files
 * `./SimpleMPS/mps.py` Implements the MPS based DMRG method
 * `./SimpleMPS/paulimat.py` Defines the Pauli matrices used in Heiserberg and Ising model
