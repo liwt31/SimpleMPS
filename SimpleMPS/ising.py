@@ -71,8 +71,8 @@ SITE_NUM = 20
 
 # only one of the following 2 parameters are needed
 
-# maximum bond order in MPS
-BOND_ORDER = 16
+# maximum bond dimension in MPS
+BOND_DIMENSION = 16
 
 # the threshold for error when compressing MPS
 ERROR_THRESHOLD = 1e-7

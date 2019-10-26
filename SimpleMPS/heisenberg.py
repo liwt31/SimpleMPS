@@ -47,15 +47,15 @@ SITE_NUM = 20
 
 # only one of the following 2 parameters are needed
 
-# maximum bond order in MPS
-MAX_BOND_ORDER = 16
+# maximum bond dimension in MPS
+MAX_BOND_DIMENSION = 16
 
 # the threshold for error when compressing MPS
 ERROR_THRESHOLD = 1e-7
 
 if __name__ == "__main__":
     mpo_list = build_mpo_list(construct_single_mpo(), SITE_NUM)
-    mps = MatrixProductState(mpo_list, max_bond_order=MAX_BOND_ORDER)
+    mps = MatrixProductState(mpo_list, max_bond_dimension=MAX_BOND_DIMENSION)
     # use threshold as criterion for compression
     # mps = MatrixProductState(mpo_list, error_threshold=ERROR_THRESHOLD)
     print(mps.search_ground_state())

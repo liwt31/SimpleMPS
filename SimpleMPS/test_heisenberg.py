@@ -3,12 +3,12 @@
 import pytest
 
 from mps import build_mpo_list, MatrixProductState
-from heisenberg import construct_single_mpo, SITE_NUM, MAX_BOND_ORDER
+from heisenberg import construct_single_mpo, SITE_NUM, MAX_BOND_DIMENSION
 
 
 def test_search():
     mpo_list = build_mpo_list(construct_single_mpo(), SITE_NUM)
-    mps = MatrixProductState(mpo_list, max_bond_order=MAX_BOND_ORDER)
+    mps = MatrixProductState(mpo_list, max_bond_dimension=MAX_BOND_DIMENSION)
     # use threshold as criterion for compression
     # mps = MatrixProductState(mpo_list, error_threshold=ERROR_THRESHOLD)
     energies = mps.search_ground_state()

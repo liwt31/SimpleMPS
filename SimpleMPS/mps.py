@@ -29,20 +29,20 @@ class MatrixState(object):
     which provides convenience for doubly linked list implementation.
     """
 
-    def __init__(self, bond_order1, bond_order2, mpo, error_thresh=0):
+    def __init__(self, bond_dim1, bond_dim2, mpo, error_thresh=0):
         """
-        Initialize a matrix state with shape (bond_order1, phys_d, bond_order2) and an MPO attached to the state,
+        Initialize a matrix state with shape (bond_dim1, phys_d, bond_dim2) and an MPO attached to the state,
         where phys_d is determined by the MPO and MPO is usually the Hamiltonian.
-        If a sentinel `MatrixState` is required, set bond_order1, phys_d or bond_order2 to 0 or None.
+        If a sentinel `MatrixState` is required, set bond_dim1, phys_d or bond_dim2 to 0 or None.
         MPO should be a 4-degree tensor with 2 bond degrees at first and 2 physical degrees at last.
-        :parameter bond_order1: shape[0] of the matrix
-        :parameter bond_order2: shape[2] of the matrix
+        :parameter bond_dim1: shape[0] of the matrix
+        :parameter bond_dim2: shape[2] of the matrix
         :parameter mpo: matrix product operator (hamiltonian) attached to the matrix
         :parameter error_thresh: error threshold used in svd compressing of the matrix state.
         The lower the threshold, the higher the accuracy.
         """
         # if is a sentinel matrix state
-        if not (bond_order1 and bond_order2):
+        if not (bond_dim1 and bond_dim2):
             self._matrix = self.mpo = np.ones((0, 0, 0))
             self.left_ms = self.right_ms = None
             self.F_cache = self.L_cache = self.R_cache = np.ones((1,) * 6)
@@ -51,7 +51,7 @@ class MatrixState(object):
         self.is_sentinel = False
         phys_d = mpo.shape[2]
         # random initialization of the state tensor
-        self._matrix = np.random.random((bond_order1, phys_d, bond_order2))
+        self._matrix = np.random.random((bond_dim1, phys_d, bond_dim2))
         self.mpo = mpo
         # the pointer to the matrix state on the left
         self.left_ms = None
@@ -75,8 +75,8 @@ class MatrixState(object):
 
     @matrix.setter
     def matrix(self, new_matrix):
-        # bond order may have reduced due to low local degree of freedom
-        # but the order of the physical degree must not change
+        # bond dimension may have reduced due to low local degree of freedom
+        # but the dimension of the physical degree must not change
         assert self.phys_d == new_matrix.shape[1]
         self._matrix = new_matrix
         # forbid writing for safety concerns
@@ -85,24 +85,24 @@ class MatrixState(object):
         self.clear_cache()
 
     @property
-    def bond_order1(self):
+    def bond_dim1(self):
         """
-        :return: the order of the first bond degree
+        :return: the dimension of the first bond degree
         """
         return self.matrix.shape[0]
 
     @property
     def phys_d(self):
         """
-        :return: the order fo the physical index
+        :return: the dimension of the physical index
         """
         assert self.matrix.shape[1] == self.mpo.shape[2] == self.mpo.shape[3]
         return self.matrix.shape[1]
 
     @property
-    def bond_order2(self):
+    def bond_dim2(self):
         """
-        :return: the order of the second bond degree
+        :return: the dimension of the second bond degree
         """
         return self.matrix.shape[2]
 
@@ -117,20 +117,20 @@ class MatrixState(object):
         assert direction in (left_argument_set + right_argument_set)
         if direction in left_argument_set:
             u, s, v = svd(
-                self.matrix.reshape(self.bond_order1 * self.phys_d, self.bond_order2),
+                self.matrix.reshape(self.bond_dim1 * self.phys_d, self.bond_dim2),
                 full_matrices=False,
             )
         else:
             u, s, v = svd(
-                self.matrix.reshape(self.bond_order1, self.phys_d * self.bond_order2),
+                self.matrix.reshape(self.bond_dim1, self.phys_d * self.bond_dim2),
                 full_matrices=False,
             )
         if self.error_thresh == 0:
             return u, s, v
-        new_bond_order = max(
+        new_bond_dim = max(
             ((s.cumsum() / s.sum()) < 1 - self.error_thresh).sum() + 1, 1
         )
-        return u[:, :new_bond_order], s[:new_bond_order], v[:new_bond_order, :]
+        return u[:, :new_bond_dim], s[:new_bond_dim], v[:new_bond_dim, :]
 
     def left_canonicalize(self):
         """
@@ -139,7 +139,7 @@ class MatrixState(object):
         if not self.right_ms:
             return
         u, s, v = self.svd_compress("left")
-        self.matrix = u.reshape((self.bond_order1, self.phys_d, -1))
+        self.matrix = u.reshape((self.bond_dim1, self.phys_d, -1))
         self.right_ms.matrix = np.tensordot(
             np.dot(np.diag(s), v), self.right_ms.matrix, axes=[1, 0]
         )
@@ -160,7 +160,7 @@ class MatrixState(object):
         if not self.left_ms:
             return
         u, s, v = self.svd_compress("right")
-        self.matrix = v.reshape((-1, self.phys_d, self.bond_order2))
+        self.matrix = v.reshape((-1, self.phys_d, self.bond_dim2))
         self.left_ms.matrix = np.tensordot(
             self.left_ms.matrix, np.dot(u, np.diag(s)), axes=[2, 0]
         )
@@ -187,7 +187,7 @@ class MatrixState(object):
             ]
         )
         print(
-            "Test left unitary: %s" % np.allclose(summation, np.eye(self.bond_order2))
+            "Test left unitary: %s" % np.allclose(summation, np.eye(self.bond_dim2))
         )
 
     def test_right_unitary(self):
@@ -203,14 +203,14 @@ class MatrixState(object):
             ]
         )
         print(
-            "Test right unitary: %s" % np.allclose(summation, np.eye(self.bond_order1))
+            "Test right unitary: %s" % np.allclose(summation, np.eye(self.bond_dim1))
         )
 
     def calc_F(self, mpo=None):
         """
         calculate F for this site.
         graphical representation (* for MPS and # for MPO,
-        numbers represents a set of imaginary bond orders used for comments below):
+        numbers represents a set of imaginary bond dimensions used for comments below):
                                   1 --*-- 5
                                       | 4
                                   2 --#-- 3
@@ -346,18 +346,18 @@ class MatrixState(object):
               |    | 7              |                           |    | 7  |   
           3 --*-- 4             4 --*-- 5                   3 --*-- 4 11--*-- 12 
             left_middle             R                       raw variational tensor
-        Note the order of 0, 2, 3, 9, 10, 12 are all 1, so the dimension could be reduced
+        Note the dimension of 0, 2, 3, 9, 10, 12 are all 1, so the dimension could be reduced
         """
         raw_variational_tensor = np.tensordot(
             left_middle, self.right_ms.calc_R(), axes=[5, 2]
         )
         shape = (
-            self.bond_order1,
-            self.bond_order1,
+            self.bond_dim1,
+            self.bond_dim1,
             self.phys_d,
             self.phys_d,
-            self.bond_order2,
-            self.bond_order2,
+            self.bond_dim2,
+            self.bond_dim2,
         )
         # reduce the dimension and rearrange the degrees to 1, 8, 6, 4, 11, 7 in the above graphical representation
         return raw_variational_tensor.reshape(shape).transpose((0, 2, 4, 1, 3, 5))
@@ -369,7 +369,7 @@ class MatrixState(object):
         :return the energy of the updated state.
         """
         assert direction == "left" or direction == "right"
-        dim = self.bond_order1 * self.phys_d * self.bond_order2
+        dim = self.bond_dim1 * self.phys_d * self.bond_dim2
         # reshape variational tensor to a square matrix
         variational_tensor = self.calc_variational_tensor().reshape(dim, dim)
         # find the smallest eigenvalue and eigenvector. Note the value returned by `eigs` are complex numbers
@@ -384,7 +384,7 @@ class MatrixState(object):
             eig_val = all_eig_val[0]
             eig_vec = all_eig_vec[:, 0]
         # reshape the eigenvector back to a matrix state
-        self.matrix = eig_vec.reshape(self.bond_order1, self.phys_d, self.bond_order2)
+        self.matrix = eig_vec.reshape(self.bond_dim1, self.phys_d, self.bond_dim2)
         # perform normalization
         if direction == "right":
             self.left_canonicalize()
@@ -406,9 +406,9 @@ class MatrixState(object):
 
     def __repr__(self):
         return "MatrixState (%d, %d, %d)" % (
-            self.bond_order1,
+            self.bond_dim1,
             self.phys_d,
-            self.bond_order2,
+            self.bond_dim2,
         )
 
     def __nonzero__(self):
@@ -426,30 +426,30 @@ class MatrixProductState(object):
     A doubly linked list of `MatrixState`. The matrix product state of the whole wave function.
     """
 
-    # initial bond order when using `error_threshold` as criterion for compression
-    initial_bond_order = 50
+    # initial bond dimension when using `error_threshold` as criterion for compression
+    initial_bond_dimension = 50
 
-    def __init__(self, mpo_list, max_bond_order=None, error_threshold=0):
+    def __init__(self, mpo_list, max_bond_dimension=None, error_threshold=0):
         """
-        Initialize a MatrixProductState with given bond order.
+        Initialize a MatrixProductState with given bond dimension.
         :param mpo_list: the list for MPOs. The site num depends on the length of the list
-        :param max_bond_order: the bond order required. The higher bond order, the higher accuracy and compuational cost
+        :param max_bond_dimension: the bond dimension required. The higher bond dimension, the higher accuracy and compuational cost
         :param error_threshold: error threshold used in svd compressing of the matrix state.
         The lower the threshold, the higher the accuracy.
         """
-        if max_bond_order is None and error_threshold == 0:
+        if max_bond_dimension is None and error_threshold == 0:
             raise ValueError(
-                "Must provide either `max_bond_order` or `error_threshold`. None is provided."
+                "Must provide either `max_bond_dimension` or `error_threshold`. None is provided."
             )
-        if max_bond_order is not None and error_threshold != 0:
+        if max_bond_dimension is not None and error_threshold != 0:
             raise ValueError(
-                "Must provide either `max_bond_order` or `error_threshold`. Both are provided."
+                "Must provide either `max_bond_dimension` or `error_threshold`. Both are provided."
             )
-        self.max_bond_order = max_bond_order
-        if max_bond_order is not None:
-            bond_order = max_bond_order
+        self.max_bond_dimension = max_bond_dimension
+        if max_bond_dimension is not None:
+            bond_dim = max_bond_dimension
         else:
-            bond_order = self.initial_bond_order
+            bond_dim = self.initial_bond_dimension
         self.error_threshold = error_threshold
         self.site_num = len(mpo_list)
         self.mpo_list = mpo_list
@@ -460,12 +460,12 @@ class MatrixProductState(object):
         self.tensor_state_tail.left_ms = self.tensor_state_head
         # initialize the matrix states with random numbers.
         M_list = (
-            [MatrixState(1, bond_order, mpo_list[0], error_threshold)]
+            [MatrixState(1, bond_dim, mpo_list[0], error_threshold)]
             + [
-                MatrixState(bond_order, bond_order, mpo_list[i + 1], error_threshold)
+                MatrixState(bond_dim, bond_dim, mpo_list[i + 1], error_threshold)
                 for i in range(self.site_num - 2)
             ]
-            + [MatrixState(bond_order, 1, mpo_list[-1], error_threshold)]
+            + [MatrixState(bond_dim, 1, mpo_list[-1], error_threshold)]
         )
         # insert matrix states to the doubly linked list
         for ts in M_list:
@@ -531,7 +531,7 @@ class MatrixProductState(object):
 
     def __str__(self):
         return "MatrixProductState: %s" % (
-            "-".join([str(ms.bond_order2) for ms in self.iter_ms_left2right()][:-1])
+            "-".join([str(ms.bond_dim2) for ms in self.iter_ms_left2right()][:-1])
         )
 
 
