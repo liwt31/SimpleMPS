@@ -484,7 +484,6 @@ class MatrixProductState(object):
         while ms:
             yield ms
             ms = ms.right_ms
-        raise StopIteration
 
     def iter_ms_right2left(self):
         """
@@ -494,7 +493,6 @@ class MatrixProductState(object):
         while ms:
             yield ms
             ms = ms.left_ms
-        raise StopIteration
 
     def search_ground_state(self):
         """
